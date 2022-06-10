@@ -70,6 +70,12 @@ object Command : CompositeCommand(
         if (!dataTarget.playing) {
             this.sendMessage("游戏未开始！")
         } else {
+            if (dataTarget.target!! !in this.group) {
+                //成员不在群里
+                this.sendMessage("说些什么")
+                dataTarget.playing = false
+                return
+            }
             if (target.id == dataTarget.target!!.id) {
                 this.sendMessage(At(this.user).plus("恭喜你回答正确！"))
                 dataTarget.playing = false
