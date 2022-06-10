@@ -10,6 +10,7 @@ group = "org.fenglin.GuessGroupFriends"
 version = "1.0-SNAPSHOT"
 
 repositories {
+    mavenLocal()
     maven("https://maven.aliyun.com/repository/public")
     mavenCentral()
 }
