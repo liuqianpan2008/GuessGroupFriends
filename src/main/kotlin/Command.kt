@@ -26,6 +26,9 @@ object Command : CompositeCommand(
      * 正在进行的游戏 <群号, 游戏>
      */
     private val games = ConcurrentHashMap<Long, Game>()
+
+    // 最近24小时发言过的
+    private const val lastSpeakLimit = 24 * 60 * 60 * 1000L
     // 缓存有效期10分钟
     private const val profileCacheTimeout = 600_000
     private val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm:ss")
@@ -50,6 +53,10 @@ object Command : CompositeCommand(
         UserProfile.Sex.FEMALE -> "女"
         UserProfile.Sex.UNKNOWN -> "未知"
     }
+
+    private val conditions = mutableListOf<NormalMember.() -> Boolean>(
+        { lastSpeakTimestamp * 1000L + lastSpeakLimit >= System.currentTimeMillis() }
+    )
 
     /**
      * 代表一个群里正在进行的游戏
@@ -77,7 +84,7 @@ object Command : CompositeCommand(
             group.sendMessage(
                 """游戏开始，下面将发送第一条线索
                     |如果回答错误，将随机发送一条线索，线索用完时游戏失败
-                    |发送 `/猜群友 guess @群友` 进行游戏
+                    |发送 `/猜群友 猜 @群友` 进行游戏
                 """.trimMargin()
             )
             group.sendMessage(getHint()!!)
@@ -89,24 +96,28 @@ object Command : CompositeCommand(
     }
 
     // 开始游戏
-    @SubCommand
+    @SubCommand("开始")
+    @Description("开始猜群友游戏")
     suspend fun CommandSender.play() {
         if (this !is MemberCommandSender) {
             sendMessage("仅可在群聊中使用")
             return
         }
         if (games[group.id] != null) {
-            sendMessage("游戏进行中, 发送 `/猜群友 guess @猜的群友` 来猜群友")
+            sendMessage("游戏进行中, 发送 `/猜群友 猜 @猜的群友` 来猜群友")
             return
         }
         // 获取群友
-        val member = group.members.toList()[Random.nextInt(group.members.size)]
+        val member = group.members.filter { member ->
+            conditions.all { it.invoke(member) }
+        }[Random.nextInt(group.members.size)]
         val game = Game(group, member)
         game.start()
     }
 
     // 猜群友
-    @SubCommand
+    @SubCommand("猜")
+    @Description("在猜群友游戏猜一次群友")
     suspend fun CommandSender.guess(target: User, chain: MessageChain) {
         if (this !is MemberCommandSender) {
             sendMessage("仅可在群聊中使用")
@@ -122,7 +133,7 @@ object Command : CompositeCommand(
             group.sendMessage(buildMessageChain {
                 append(PlainText("恭喜 "))
                 append(At(user))
-                append(PlainText(" 猜出了群友, 游戏结束\n发送 /猜群友 play 开始新游戏"))
+                append(PlainText(" 猜出了群友, 游戏结束\n发送 `/猜群友 开始` 开始新游戏"))
             })
             return
         }
