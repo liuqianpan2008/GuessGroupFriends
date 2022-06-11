@@ -1,10 +1,7 @@
 package org.fenglin
 
 import kotlinx.coroutines.*
-import net.mamoe.mirai.console.command.CommandSender
-import net.mamoe.mirai.console.command.CommandSenderOnMessage
-import net.mamoe.mirai.console.command.CompositeCommand
-import net.mamoe.mirai.console.command.MemberCommandSender
+import net.mamoe.mirai.console.command.*
 import net.mamoe.mirai.console.permission.PermissionService.Companion.hasPermission
 import net.mamoe.mirai.contact.*
 import net.mamoe.mirai.data.UserProfile
@@ -135,11 +132,10 @@ object Command : CompositeCommand(
     @SubCommand("开始")
     @Description("开始猜群友游戏")
     suspend fun CommandSender.play() {
-        if (this !is MemberCommandSender) {
+        if (this !is MemberCommandSenderOnMessage) {
             sendMessage("仅可在群聊中使用")
             return
         }
-        this as CommandSenderOnMessage<*>
         if (games[group.id] != null) {
             sendMessage(
                 fromEvent.source.quote().plus(
@@ -166,11 +162,10 @@ object Command : CompositeCommand(
     @SubCommand("猜")
     @Description("在猜群友游戏猜一次群友")
     suspend fun CommandSender.guess(target: User) {
-        if (this !is MemberCommandSender) {
+        if (this !is MemberCommandSenderOnMessage) {
             sendMessage("仅可在群聊中使用")
             return
         }
-        this as CommandSenderOnMessage<*>
         val game = games[group.id]
         if (game == null) {
             sendMessage(fromEvent.source.quote().plus("游戏未开始\n发送 `/猜群友 开始` 开始游戏"))
@@ -207,11 +202,10 @@ object Command : CompositeCommand(
     @SubCommand("结束")
     @Description("结束猜群友游戏")
     suspend fun CommandSender.stop() {
-        if (this !is MemberCommandSender) {
+        if (this !is MemberCommandSenderOnMessage) {
             sendMessage("仅可在群聊中使用")
             return
         }
-        this as CommandSenderOnMessage<*>
         val game = games[group.id]
         if (game == null) {
             sendMessage(fromEvent.source.quote().plus("游戏未开始\n发送 `/猜群友 开始` 开始游戏"))
@@ -235,11 +229,10 @@ object Command : CompositeCommand(
     @SubCommand("测试")
     @Description("测试线索")
     suspend fun CommandSender.test(target: User) {
-        if (this !is MemberCommandSender) {
+        if (this !is MemberCommandSenderOnMessage) {
             sendMessage("仅可在群聊中使用")
             return
         }
-        this as CommandSenderOnMessage<*>
         if (!hasPermission(GuessGroupFriends.testPerm)) {
             sendMessage(fromEvent.source.quote().plus("无权限"))
             return
