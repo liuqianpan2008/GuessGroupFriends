@@ -1,7 +1,9 @@
 package org.fenglin
 
 import kotlinx.coroutines.*
-import net.mamoe.mirai.console.command.*
+import net.mamoe.mirai.console.command.CommandSender
+import net.mamoe.mirai.console.command.CompositeCommand
+import net.mamoe.mirai.console.command.MemberCommandSenderOnMessage
 import net.mamoe.mirai.console.permission.PermissionService.Companion.hasPermission
 import net.mamoe.mirai.contact.*
 import net.mamoe.mirai.data.UserProfile
@@ -76,23 +78,27 @@ object Command : CompositeCommand(
         private var task: TimerTask? = null
         val face by lazy { URL(member.avatarUrl).readBytes().toImage() }
 
-        private val profile by lazy { runBlocking { member.getCacheProfile() } }
-        val hint = arrayListOf<() -> Message>(
+        private val profile = GuessGroupFriends.async(start = CoroutineStart.LAZY) {
+            member.getCacheProfile()
+        }
+        private suspend fun getProfile() = profile.await()
+
+        val hint = arrayListOf<suspend () -> Message>(
             { PlainText("ta的昵称中包含字符: ${member.nameCardOrNick.random()}") },
             { PlainText("ta的群头衔: ${member.specialTitle}") },
             { PlainText("ta${if (member.permission == MemberPermission.ADMINISTRATOR) "是" else "不是"}群管理") },
             { PlainText("ta的入群时间为: ${member.joinTimestamp.formatAsDate()}(${member.joinTimestamp.fromNowSecondly()}前)") },
             { PlainText("ta的最后发言时间: ${member.lastSpeakTimestamp.formatAsDate()}(${member.lastSpeakTimestamp.fromNowSecondly()}前)") },
-            { PlainText("ta的性别: ${profile.sex.alias()}") },
-            { PlainText("ta的QQ等级: ${profile.qLevel}") },
-            { PlainText(if (profile.sign.isEmpty()) "ta的个性签名是空的" else "ta的个性签名: ${profile.sign}") },
-            { PlainText("ta的年龄: ${profile.age}") },
-            { PlainText("ta的头像包含以下部分\n").plus(runBlocking(Dispatchers.IO) { group.uploadImage(face.split()) }) },
-            { PlainText("ta的头像模糊之后是这样的\n").plus(runBlocking(Dispatchers.IO) { group.uploadImage(face.blur()) }) },
-            { PlainText("ta的头像缩放之后是这样的\n").plus(runBlocking(Dispatchers.IO) { group.uploadImage(face.scale()) }) },
+            { PlainText("ta的性别: ${getProfile().sex.alias()}") },
+            { PlainText("ta的QQ等级: ${getProfile().qLevel}") },
+            { PlainText(if (getProfile().sign.isEmpty()) "ta的个性签名是空的" else "ta的个性签名: ${getProfile().sign}") },
+            { PlainText("ta的年龄: ${getProfile().age}") },
+            { PlainText("ta的头像包含以下部分\n").plus(group.uploadImage(face.split())) },
+            { PlainText("ta的头像模糊之后是这样的\n").plus(group.uploadImage(face.blur())) },
+            { PlainText("ta的头像缩放之后是这样的\n").plus(group.uploadImage(face.scale())) },
         )
 
-        fun getHint() =
+        suspend fun getHint() =
             if (hint.isEmpty()) null
             else hint.removeAt(Random.nextInt(hint.size)).invoke()
 
@@ -239,10 +245,10 @@ object Command : CompositeCommand(
         }
         val game = Game(group, target as NormalMember, user)
         val f = buildForwardMessage(group) {
-            runBlocking(Dispatchers.IO) {
-                game.hint.forEach { func ->
-                    launch { add(bot, func.invoke()) }
-                }
+            withContext(Dispatchers.IO) {
+                game.hint.map { func ->
+                    async { add(bot, func.invoke()) }
+                }.awaitAll()
             }
         }
         group.sendMessage(f)
