@@ -2,6 +2,14 @@
 
 > 基于[mirai](https://github.com/mamoe/mirai)开发的一款群娱乐插件
 
+***本插件需要前置插件：[mirai-skia-plugin](https://github.com/cssxsh/mirai-skia-plugin/releases/tag/v1.1.0)***
+
+***本插件需要前置插件：[mirai-skia-plugin](https://github.com/cssxsh/mirai-skia-plugin/releases/tag/v1.1.0)***
+
+***本插件需要前置插件：[mirai-skia-plugin](https://github.com/cssxsh/mirai-skia-plugin/releases/tag/v1.1.0)***
+
+重要的事情说三遍！！！
+
 **使用前请详细查阅的下面文档后食用**
 
 * [User Manual](https://github.com/mamoe/mirai/blob/dev/docs/UserManual.md)
@@ -9,6 +17,19 @@
 * [Chat Command](https://github.com/project-mirai/chat-command)
 
 ### 效果图
+
+新版效果图(v>=1.0.2)
+
+![新版效果图](https://user-images.githubusercontent.com/80571808/173185256-f1ce41cb-aad9-4867-9d87-10b2c9943658.png)
+
+
+所有包含的线索
+
+![QQ截图20220611190221](https://user-images.githubusercontent.com/80571808/173185264-ef987888-007b-4208-a31d-42e8df879e6e.png)
+
+
+
+旧版效果图（v<=1.0.0）
 
 ![效果图](https://user-images.githubusercontent.com/80571808/172976526-c9ff4c82-98eb-478e-8aa5-6597c129db7e.png)
 
@@ -29,6 +50,10 @@
 ### 下载
 
 [releases](https://github.com/liuqianpan2008/GuessGroupFriends/releases/tag/v1.0.0)
+
+### 鸣谢
+
+感谢[@404E](https://github.com/4o4E)佬对本插件的重写和优化
 
 ## issues
 
