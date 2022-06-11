@@ -7,10 +7,13 @@ plugins {
 }
 
 group = "org.fenglin.GuessGroupFriends"
-version = "1.0-SNAPSHOT"
+version = "1.0.0"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
     mavenCentral()
 }
 
+dependencies {
+    compileOnly("xyz.cssxsh.mirai:mirai-skia-plugin:1.1.0")
+}
