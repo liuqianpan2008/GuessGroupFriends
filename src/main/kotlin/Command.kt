@@ -1,26 +1,29 @@
 package org.fenglin
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import net.mamoe.mirai.console.command.CommandSender
+import net.mamoe.mirai.console.command.CommandSenderOnMessage
 import net.mamoe.mirai.console.command.CompositeCommand
 import net.mamoe.mirai.console.command.MemberCommandSender
+import net.mamoe.mirai.console.permission.PermissionService.Companion.hasPermission
 import net.mamoe.mirai.contact.*
 import net.mamoe.mirai.data.UserProfile
-import net.mamoe.mirai.message.data.At
-import net.mamoe.mirai.message.data.MessageChain
+import net.mamoe.mirai.message.data.*
 import net.mamoe.mirai.message.data.MessageSource.Key.quote
-import net.mamoe.mirai.message.data.PlainText
-import net.mamoe.mirai.message.data.buildMessageChain
-import java.text.SimpleDateFormat
+import net.mamoe.mirai.utils.ExternalResource.Companion.toExternalResource
+import net.mamoe.mirai.utils.ExternalResource.Companion.uploadAsImage
+import org.jetbrains.skia.EncodedImageFormat
+import java.net.URL
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.concurrent.timerTask
 import kotlin.random.Random
 
 object Command : CompositeCommand(
     GuessGroupFriends,
     "猜群友",
     "猜群友游戏",
-    description = "开始猜群友！"
+    description = "开始猜群友"
 ) {
     /**
      * 正在进行的游戏 <群号, 游戏>
@@ -29,9 +32,9 @@ object Command : CompositeCommand(
 
     // 最近24小时发言过的
     private const val lastSpeakLimit = 24 * 60 * 60 * 1000L
+
     // 缓存有效期10分钟
     private const val profileCacheTimeout = 600_000
-    private val sdf = SimpleDateFormat("yyyy/MM/dd HH:mm:ss")
 
     /**
      * 用户UserProfile缓存 <id, <profile, 缓存时间戳>>
@@ -62,40 +65,73 @@ object Command : CompositeCommand(
      * 代表一个群里正在进行的游戏
      *
      * @param group 群
-     * @param member 正在猜的群友
+     * @param member 正在猜的群员
+     * @param owner 创建游戏的群员id
      */
-    class Game(val group: Group, val member: NormalMember) {
+    class Game(val group: Group, val member: NormalMember, val owner: User) {
+        companion object {
+            private val timer = Timer("GuessGroupFriends")
+
+            // 5分钟无响应即为超时
+            private const val timeout = 5 * 60 * 1000L
+        }
+
+        private var task: TimerTask? = null
+        val face by lazy { URL(member.avatarUrl).readBytes().toImage() }
+
         private val profile by lazy { runBlocking { member.getCacheProfile() } }
-        private val hint = arrayListOf(
-            { PlainText("ta的网名中含有${member.nameCardOrNick.random()}") },
-            { PlainText("ta的入群时间为:${sdf.format(Date(member.joinTimestamp * 1000L))}") },
-            { PlainText("ta的最后发言时间:${sdf.format(Date(member.lastSpeakTimestamp * 1000L))}") },
-            { PlainText("ta的性别:${profile.sex.alias()}") },
-            { PlainText("ta的QQ等级:${profile.qLevel}") },
-            { PlainText("ta的个性签名:${profile.sign}") },
-            { PlainText("ta的年龄:${profile.age}") },
+        val hint = arrayListOf<() -> Message>(
+            { PlainText("ta的昵称中包含字符: ${member.nameCardOrNick.random()}") },
+            { PlainText("ta的群头衔: ${member.specialTitle}") },
+            { PlainText("ta${if (member.permission == MemberPermission.ADMINISTRATOR) "是" else "不是"}群管理") },
+            { PlainText("ta的入群时间为: ${member.joinTimestamp.formatAsDate()}(${member.joinTimestamp.fromNowSecondly()}前)") },
+            { PlainText("ta的最后发言时间: ${member.lastSpeakTimestamp.formatAsDate()}(${member.lastSpeakTimestamp.fromNowSecondly()}前)") },
+            { PlainText("ta的性别: ${profile.sex.alias()}") },
+            { PlainText("ta的QQ等级: ${profile.qLevel}") },
+            { PlainText(if (profile.sign.isEmpty()) "ta的个性签名是空的" else "ta的个性签名: ${profile.sign}") },
+            { PlainText("ta的年龄: ${profile.age}") },
+            { PlainText("ta的头像包含以下部分\n").plus(runBlocking(Dispatchers.IO) { group.uploadImage(face.split()) }) },
+            { PlainText("ta的头像模糊之后是这样的\n").plus(runBlocking(Dispatchers.IO) { group.uploadImage(face.blur()) }) },
+            { PlainText("ta的头像缩放之后是这样的\n").plus(runBlocking(Dispatchers.IO) { group.uploadImage(face.scale()) }) },
         )
 
         fun getHint() =
             if (hint.isEmpty()) null
             else hint.removeAt(Random.nextInt(hint.size)).invoke()
 
+        fun updateTask() {
+            task?.cancel()
+            task = timerTask {
+                runBlocking {
+                    PlainText("由于长时间无人触发, ")
+                        .plus(At(owner))
+                        .plus(" 创建的游戏已自定关闭\n发送 `/猜群友 开始` 开始新游戏")
+                        .sendTo(group)
+                }
+                games.remove(group.id)
+            }
+            timer.schedule(task, timeout)
+        }
+
         suspend fun start() {
+            games[group.id] = this
+            GuessGroupFriends.logger.info("在群${group.name}(${group.id})开始猜群友游戏, 选择的群员: ${member.nameCardOrNick}(${member.id})")
             group.sendMessage(
-                """游戏开始，下面将发送第一条线索
-                    |如果回答错误，将随机发送一条线索，线索用完时游戏失败
+                """游戏开始, 下面将发送第一条线索
+                    |如果回答错误, 将随机发送一条线索, 线索用完时游戏失败
                     |发送 `/猜群友 猜 @群友` 进行游戏
                 """.trimMargin()
             )
+            updateTask()
             group.sendMessage(getHint()!!)
         }
 
         fun end() {
+            task?.cancel()
             games.remove(group.id)
         }
     }
 
-    // 开始游戏
     @SubCommand("开始")
     @Description("开始猜群友游戏")
     suspend fun CommandSender.play() {
@@ -103,37 +139,57 @@ object Command : CompositeCommand(
             sendMessage("仅可在群聊中使用")
             return
         }
+        this as CommandSenderOnMessage<*>
         if (games[group.id] != null) {
-            sendMessage("游戏进行中, 发送 `/猜群友 猜 @猜的群友` 来猜群友")
+            sendMessage(
+                fromEvent.source.quote().plus(
+                    """游戏进行中
+                    |发送 `/猜群友 猜 @猜的群友` 猜群友
+                    |发送 `/猜群友 结束` 停止当前游戏
+                """.trimMargin()
+                )
+            )
             return
         }
         // 获取群友
-        val member = group.members.filter { member ->
+        val filter = group.members.filter { member ->
             conditions.all { it.invoke(member) }
-        }[Random.nextInt(group.members.size)]
-        val game = Game(group, member)
-        game.start()
+        }
+        if (filter.isEmpty()) {
+            sendMessage(fromEvent.source.quote().plus("没有满足条件的群员"))
+            return
+        }
+        val member = filter[Random.nextInt(filter.size)]
+        Game(group, member, user).start()
     }
 
-    // 猜群友
     @SubCommand("猜")
     @Description("在猜群友游戏猜一次群友")
-    suspend fun CommandSender.guess(target: User, chain: MessageChain) {
+    suspend fun CommandSender.guess(target: User) {
         if (this !is MemberCommandSender) {
             sendMessage("仅可在群聊中使用")
             return
         }
+        this as CommandSenderOnMessage<*>
         val game = games[group.id]
         if (game == null) {
-            sendMessage("游戏未开始！")
+            sendMessage(fromEvent.source.quote().plus("游戏未开始\n发送 `/猜群友 开始` 开始游戏"))
             return
         }
         val success = target.id == game.member.id
         if (success) {
+            game.end()
             group.sendMessage(buildMessageChain {
                 append(PlainText("恭喜 "))
                 append(At(user))
-                append(PlainText(" 猜出了群友, 游戏结束\n发送 `/猜群友 开始` 开始新游戏"))
+                append(PlainText(" 猜出了群友, 游戏结束\n"))
+                val face = game.face
+                    .encodeToData(EncodedImageFormat.PNG)!!
+                    .bytes
+                    .toExternalResource()
+                    .use { it.uploadAsImage(group) }
+                append(face)
+                append(PlainText("\n发送 `/猜群友 开始` 开始新游戏"))
             })
             return
         }
@@ -141,15 +197,61 @@ object Command : CompositeCommand(
         // 提示用完
         if (hint == null) {
             game.end()
-            sendMessage("看来没人能猜到我，我要公布答案了：这位群友是: ${game.member.nameCardOrNick}")
+            sendMessage("没有人猜出来, 游戏结束: 这位群友是: ${game.member.nameCardOrNick}")
             return
         }
+        game.updateTask()
+        sendMessage(fromEvent.source.quote().plus("回答错误\n新提示: ").plus(hint))
+    }
+
+    @SubCommand("结束")
+    @Description("结束猜群友游戏")
+    suspend fun CommandSender.stop() {
+        if (this !is MemberCommandSender) {
+            sendMessage("仅可在群聊中使用")
+            return
+        }
+        this as CommandSenderOnMessage<*>
+        val game = games[group.id]
+        if (game == null) {
+            sendMessage(fromEvent.source.quote().plus("游戏未开始\n发送 `/猜群友 开始` 开始游戏"))
+            return
+        }
+        if (!hasPermission(GuessGroupFriends.stopPerm)
+            || game.owner.id != user.id
+        ) {
+            sendMessage(fromEvent.source.quote().plus("仅游戏发起者和管理可以停止游戏"))
+            return
+        }
+        game.end()
         sendMessage(
-            buildMessageChain {
-                append(chain.quote())
-                append(At(user))
-                append("回答错误！\n新提示：$hint")
-            }
+            fromEvent.source.quote()
+                .plus("由 ")
+                .plus(At(game.owner))
+                .plus(" 创建的游戏已被手动停止\n发送 `/猜群友 开始` 开始新游戏")
         )
+    }
+
+    @SubCommand("测试")
+    @Description("测试线索")
+    suspend fun CommandSender.test(target: User) {
+        if (this !is MemberCommandSender) {
+            sendMessage("仅可在群聊中使用")
+            return
+        }
+        this as CommandSenderOnMessage<*>
+        if (!hasPermission(GuessGroupFriends.testPerm)) {
+            sendMessage(fromEvent.source.quote().plus("无权限"))
+            return
+        }
+        val game = Game(group, target as NormalMember, user)
+        val f = buildForwardMessage(group) {
+            runBlocking(Dispatchers.IO) {
+                game.hint.forEach { func ->
+                    launch { add(bot, func.invoke()) }
+                }
+            }
+        }
+        group.sendMessage(f)
     }
 }
